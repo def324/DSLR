@@ -3,7 +3,7 @@ import subprocess
 from collections import namedtuple
 from typing import Any, List, Optional, Tuple, Union
 
-from psycopg2 import sql
+from psycopg2 import sql, OperationalError
 
 from dslr.pg_client import PGClient
 
@@ -62,15 +62,34 @@ def exec_sql(
     global pg_client
 
     if not pg_client:
-        # We always want to connect to the `postgres` and not the target
+        # We always want to connect to the `dslr_working_db` and not the target
         # database because none of our operations need to query the target
-        # database.
-        pg_client = PGClient(
-            host=settings.db.host,
-            port=settings.db.port,
-            user=settings.db.username,
-            password=settings.db.password,
-            dbname="postgres",
-        )
+        # database. `dslr_working_db` is used so that operations will work on
+        # any db, including the default postgrs db.
+        try:
+            pg_client = PGClient(
+                host=settings.db.host,
+                port=settings.db.port,
+                user=settings.db.username,
+                password=settings.db.password,
+                dbname="dslr_working_db",
+            )
+        except OperationalError:
+            # `dslr_workinng_db`` doesn't exist, let's create it and reconnect.
+            pg_client = PGClient(
+                host=settings.db.host,
+                port=settings.db.port,
+                user=settings.db.username,
+                password=settings.db.password,
+                dbname="postgres",
+            )
+            pg_client.execute("CREATE DATABASE dslr_working_db", None)
+            pg_client = PGClient(
+                host=settings.db.host,
+                port=settings.db.port,
+                user=settings.db.username,
+                password=settings.db.password,
+                dbname="dslr_working_db",
+            )
 
     return pg_client.execute(sql, data)
